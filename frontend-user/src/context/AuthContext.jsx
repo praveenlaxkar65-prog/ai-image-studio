@@ -17,9 +17,13 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    api
-      .get('/user/profile')
-      .then((res) => setUser(res.data?.user ?? res.data))
+   api
+  .get('/auth/me')
+  .then((res) => {
+    const u = res.data?.user;
+    setUser(u ? { ...u, credits: u.credits_balance } : null);
+  })
+      
       .catch(() => {
         localStorage.removeItem('ais_token');
         setUser(null);
@@ -33,7 +37,7 @@ export function AuthProvider({ children }) {
       const res = await api.post('/auth/login', { email, password });
       const { token, user: userData } = res.data;
       localStorage.setItem('ais_token', token);
-      setUser(userData);
+      setUser({ ...userData, credits: userData.credits_balance });
       return { success: true };
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed. Check your credentials.';
@@ -48,7 +52,7 @@ export function AuthProvider({ children }) {
       const res = await api.post('/auth/signup', { name, email, password });
       const { token, user: userData } = res.data;
       localStorage.setItem('ais_token', token);
-      setUser(userData);
+      setUser({ ...userData, credits: userData.credits_balance });
       return { success: true };
     } catch (err) {
       const message = err.response?.data?.message || 'Could not create account.';
