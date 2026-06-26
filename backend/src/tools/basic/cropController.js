@@ -10,6 +10,7 @@ const {
   checkBalance,
   deductCredits
 } = require('../../credits/creditService');
+
 const {
   getActiveStorageAdapter,
   getStorageConfig
@@ -27,12 +28,12 @@ async function cropImage(req, res) {
       height
     } = req.body;
 
+    // Input validation
     if (
       !imageUrl ||
-      x === undefined ||
-      y === undefined ||
-      !width ||
-      !height
+      [x, y, width, height].some(
+        value => value === undefined || Number.isNaN(Number(value))
+      )
     ) {
       return res.status(400).json({
         success: false,
@@ -40,6 +41,14 @@ async function cropImage(req, res) {
       });
     }
 
+    if (Number(width) <= 0 || Number(height) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Width and height must be greater than zero.'
+      });
+    }
+
+    // Load tool configuration dynamically
     const { data: tool, error: toolError } = await supabase
       .from('tools_config')
       .select('credit_cost')
@@ -60,6 +69,7 @@ async function cropImage(req, res) {
 
     const creditCost = Number(tool.credit_cost || 0);
 
+    // Credit validation
     const balance = await checkBalance(userId, creditCost);
 
     if (!balance.sufficient) {
@@ -71,6 +81,7 @@ async function cropImage(req, res) {
       });
     }
 
+    // Download source image
     const response = await fetch(imageUrl);
 
     if (!response.ok) {
@@ -82,6 +93,7 @@ async function cropImage(req, res) {
 
     const inputBuffer = Buffer.from(await response.arrayBuffer());
 
+    // Crop image
     const outputBuffer = await sharp(inputBuffer)
       .extract({
         left: Number(x),
@@ -92,19 +104,32 @@ async function cropImage(req, res) {
       .png()
       .toBuffer();
 
+    // Upload processed image
     const adapter = await getActiveStorageAdapter();
     const storageConfig = await getStorageConfig();
 
     const fileName = `crop_${randomUUID()}.png`;
 
-    const resultUrl = await adapter.uploadFile(
+    const uploadResult = await adapter.uploadFile(
       outputBuffer,
       fileName,
       storageConfig
     );
 
+    // Support multiple adapter return formats
+    const resultUrl =
+      uploadResult?.url ||
+      uploadResult?.publicUrl ||
+      uploadResult;
+
+    if (!resultUrl) {
+      throw new Error('Storage adapter did not return file URL.');
+    }
+
+    // Deduct credits (idempotent)
     const idempotencyKey =
-      `${userId}_crop_image_${Date.now()}`;
+      req.headers['x-request-id'] ||
+      `${userId}_crop_image_${randomUUID()}`;
 
     const deduction = await deductCredits(
       userId,
@@ -113,7 +138,7 @@ async function cropImage(req, res) {
       idempotencyKey
     );
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       resultUrl,
       creditsDeducted: creditCost,
@@ -133,4 +158,3 @@ async function cropImage(req, res) {
 module.exports = {
   cropImage
 };
-```

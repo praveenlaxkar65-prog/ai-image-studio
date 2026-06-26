@@ -119,4 +119,14 @@ async function deleteAccount(req, res) {
 
     return res.status(200).json({ success: true, message: 'Account deactivated' });
   } catch (err) {
-    console.error('deleteAccount error:',
+    console.error('deleteAccount error:', err);
+    return res.status(500).json({ success: false, message: 'Internal server error', error: err.message });
+  }
+}
+
+module.exports = {
+  getProfile,
+  updateProfile,
+  changePassword,
+  deleteAccount,
+};

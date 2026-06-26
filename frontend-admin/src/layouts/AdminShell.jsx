@@ -1,3 +1,4 @@
+import React from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import {
   LayoutGrid, Wrench, Cable, Tag, Database, ShieldAlert, Users, BarChart3, Settings, LogOut,

@@ -1,3 +1,4 @@
+import React from 'react'; 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 
@@ -15,7 +16,7 @@ export function AdminAuthProvider({ children }) {
       return;
     }
     api
-      .get('/profile')
+      .get('/auth/me')
       .then((res) => setAdmin(res.data?.admin ?? res.data))
       .catch(() => {
         localStorage.removeItem('ais_admin_token');
@@ -27,8 +28,11 @@ export function AdminAuthProvider({ children }) {
   const login = useCallback(async ({ email, password }) => {
     setAuthError(null);
     try {
-      const res = await api.post('/login', { email, password });
-      const { token, admin: adminData } = res.data;
+      const res = await api.post('/auth/login', { email, password });
+const { token, user: adminData } = res.data;
+if (adminData.role !== 'admin') {
+  throw { response: { data: { message: 'This account is not an admin.' } } };
+}
       localStorage.setItem('ais_admin_token', token);
       setAdmin(adminData);
       return { success: true };

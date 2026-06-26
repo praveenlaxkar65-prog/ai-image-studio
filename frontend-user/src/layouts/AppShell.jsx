@@ -1,3 +1,4 @@
+import React from 'react';
 import { NavLink, Outlet, Link } from 'react-router-dom';
 import { LayoutGrid, Wrench, MessageSquareText, Image as ImageIcon, Wallet, Settings, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';

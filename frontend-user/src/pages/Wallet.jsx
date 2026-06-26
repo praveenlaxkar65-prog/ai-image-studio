@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { Zap, ArrowUpRight, ArrowDownLeft, Receipt } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';

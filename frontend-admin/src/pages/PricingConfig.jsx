@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Save } from 'lucide-react';
 import api from '../services/api';
