@@ -2,55 +2,50 @@ import React from 'react';
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 
-const ADAPTERS = [
+const PROVIDERS = [
   { value: 's3', label: 'Amazon S3' },
   { value: 'r2', label: 'Cloudflare R2' },
   { value: 'local', label: 'Local disk' },
 ];
 
-const DEFAULTS = {
-  adapter: 'local',
-  bucket: '',
-  region: '',
-  accessKeyId: '',
-  secretAccessKey: '',
-  endpoint: '',
-  autoDeleteHours: 12,
-};
-
 export default function StorageConfig() {
-  const [form, setForm] = useState(DEFAULTS);
+  const [provider, setProvider] = useState('local');
+  const [config, setConfig] = useState({ accessKey: '', secretKey: '', bucketName: '', region: '', endpoint: '' });
+  const [autoDeleteHours, setAutoDeleteHours] = useState(12);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     api
-      .get('/storage/config')
-      .then((res) => setForm((p) => ({ ...p, ...(res.data?.config ?? res.data) })))
-      .catch(() => {}) // keep defaults if backend not wired yet
+      .get('/storage')
+      .then((res) => {
+        const s = res.data?.settings ?? {};
+        if (s.storage_provider) setProvider(s.storage_provider);
+        if (s.storage_config) setConfig((p) => ({ ...p, ...s.storage_config }));
+        if (s.auto_delete_hours !== undefined) setAutoDeleteHours(s.auto_delete_hours);
+      })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  const handleChange = (e) => {
-    const { name, value, type } = e.target;
-    setForm((p) => ({ ...p, [name]: type === 'number' ? Number(value) : value }));
-  };
+  const handleConfigChange = (e) => setConfig((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
-    setSaved(false);
     try {
-      await api.put('/storage/config', form);
-    } catch {
-      // backend not wired yet — saved state still reflects intent for UI testing
-    } finally {
-      setSaving(false);
+      await api.put('/storage/provider', { provider });
+      await api.put('/storage/config', config);
+      await api.put('/storage/auto-delete', { hours: Number(autoDeleteHours) });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Could not save storage settings.');
+    } finally {
+      setSaving(false);
     }
-  };
+  }
 
   if (loading) {
     return (
@@ -68,39 +63,39 @@ export default function StorageConfig() {
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-[#26262E] bg-[#15151C] p-5">
-        <Field label="Adapter">
+        <Field label="Provider">
           <select
-            name="adapter" value={form.adapter} onChange={handleChange}
+            value={provider} onChange={(e) => setProvider(e.target.value)}
             className="w-full rounded-lg border border-[#26262E] bg-[#0B0B0F] px-3.5 py-2.5 text-sm outline-none focus:border-[#7C5CFC]"
           >
-            {ADAPTERS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+            {PROVIDERS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </Field>
 
-        {form.adapter !== 'local' && (
+        {provider !== 'local' && (
           <>
             <Field label="Bucket name">
-              <Input name="bucket" value={form.bucket} onChange={handleChange} placeholder="my-bucket" />
+              <Input name="bucketName" value={config.bucketName} onChange={handleConfigChange} placeholder="my-bucket" />
             </Field>
             <Field label="Region">
-              <Input name="region" value={form.region} onChange={handleChange} placeholder="auto / us-east-1" />
+              <Input name="region" value={config.region} onChange={handleConfigChange} placeholder="auto / us-east-1" />
             </Field>
-            <Field label="Access key ID">
-              <Input name="accessKeyId" value={form.accessKeyId} onChange={handleChange} />
+            <Field label="Access key">
+              <Input name="accessKey" value={config.accessKey} onChange={handleConfigChange} />
             </Field>
-            <Field label="Secret access key">
-              <Input type="password" name="secretAccessKey" value={form.secretAccessKey} onChange={handleChange} />
+            <Field label="Secret key">
+              <Input type="password" name="secretKey" value={config.secretKey} onChange={handleConfigChange} />
             </Field>
-            {form.adapter === 'r2' && (
+            {provider === 'r2' && (
               <Field label="Endpoint">
-                <Input name="endpoint" value={form.endpoint} onChange={handleChange} placeholder="https://<account>.r2.cloudflarestorage.com" />
+                <Input name="endpoint" value={config.endpoint} onChange={handleConfigChange} placeholder="https://<account>.r2.cloudflarestorage.com" />
               </Field>
             )}
           </>
         )}
 
         <Field label="Auto-delete files after (hours)">
-          <Input type="number" min={1} name="autoDeleteHours" value={form.autoDeleteHours} onChange={handleChange} />
+          <Input type="number" min={1} value={autoDeleteHours} onChange={(e) => setAutoDeleteHours(e.target.value)} />
         </Field>
 
         <div className="flex items-center gap-3">

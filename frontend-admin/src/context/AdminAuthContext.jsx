@@ -1,6 +1,13 @@
-import React from 'react'; 
+import React from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import api from '../services/api';
+
+// `api` is scoped to /api/admin for all admin-only endpoints.
+// Login/session-restore are shared, non-admin-prefixed routes (/api/auth/...),
+// so they need a separate instance pointed one level up.
+const authBaseURL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/admin\/?$/, '');
+const authApi = axios.create({ baseURL: authBaseURL });
 
 const AdminAuthContext = createContext(null);
 
@@ -15,9 +22,9 @@ export function AdminAuthProvider({ children }) {
       setLoading(false);
       return;
     }
-    api
-      .get('/auth/me')
-      .then((res) => setAdmin(res.data?.admin ?? res.data))
+    authApi
+      .get('/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => setAdmin(res.data?.user))
       .catch(() => {
         localStorage.removeItem('ais_admin_token');
         setAdmin(null);
@@ -28,13 +35,15 @@ export function AdminAuthProvider({ children }) {
   const login = useCallback(async ({ email, password }) => {
     setAuthError(null);
     try {
-      const res = await api.post('/auth/login', { email, password });
-const { token, user: adminData } = res.data;
-if (adminData.role !== 'admin') {
-  throw { response: { data: { message: 'This account is not an admin.' } } };
-}
+      const res = await authApi.post('/auth/login', { email, password });
+      const { token, user: userData } = res.data;
+
+      if (userData.role !== 'admin') {
+        throw { response: { data: { message: 'This account is not an admin.' } } };
+      }
+
       localStorage.setItem('ais_admin_token', token);
-      setAdmin(adminData);
+      setAdmin(userData);
       return { success: true };
     } catch (err) {
       const message = err.response?.data?.message || 'Invalid credentials.';

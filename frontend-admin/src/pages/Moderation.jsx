@@ -15,35 +15,35 @@ export default function Moderation() {
   function fetchFlags() {
     setLoading(true);
     api
-      .get('/moderation/flags', { params: { status: 'pending' } })
-      .then((res) => setFlags(res.data?.flags ?? res.data ?? []))
+      .get('/moderation', { params: { status: 'pending', limit: 50 } })
+      .then((res) => setFlags(res.data?.flags ?? []))
       .catch(() => setFlags([]))
       .finally(() => setLoading(false));
   }
 
-  async function handleAction(flag, action) {
+  async function handleResolve(flag, decision) {
     setActingId(flag.id);
     try {
-      await api.post(`/moderation/flags/${flag.id}/${action}`); // action: 'approve' | 'reject'
-    } catch {
-      // backend not wired yet
-    } finally {
+      await api.put(`/moderation/${flag.id}/resolve`, { decision });
       setFlags((prev) => prev.filter((f) => f.id !== flag.id));
+    } catch (err) {
+      alert(err.response?.data?.message || 'Could not resolve flag.');
+    } finally {
       setActingId(null);
     }
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-6 py-8">
       <h1 className="mb-1 font-['Space_Grotesk'] text-xl font-medium">Moderation</h1>
       <p className="mb-6 text-sm text-[#9494A0]">
-        Content flagged by the Safety Layer (NSFW / deepfake / copyright). Approve to release, reject to block and notify the user.
+        Content flagged by the Safety Layer (NSFW / deepfake / copyright). Approve to release, reject to block.
       </p>
 
       {loading ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="aspect-square animate-pulse rounded-lg bg-[#15151C]" />
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-lg bg-[#15151C]" />
           ))}
         </div>
       ) : flags.length === 0 ? (
@@ -52,34 +52,32 @@ export default function Moderation() {
           <p className="text-sm text-[#9494A0]">Queue is clear. Nothing pending review.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className="space-y-3">
           {flags.map((flag) => (
-            <div key={flag.id} className="overflow-hidden rounded-xl border border-[#26262E] bg-[#15151C]">
-              <div className="aspect-square overflow-hidden bg-[#0B0B0F]">
-                <img src={flag.thumbnailUrl || flag.url} alt="Flagged content" className="h-full w-full object-cover" />
-              </div>
-              <div className="p-3">
+            <div key={flag.id} className="flex items-center gap-4 rounded-xl border border-[#26262E] bg-[#15151C] p-4">
+              <div className="flex-1">
                 <span className="inline-block rounded-full bg-[#3a1f24] px-2 py-0.5 font-['JetBrains_Mono'] text-[10px] text-[#f08a96]">
-                  {flag.reason || 'flagged'}
+                  {flag.flag_type}
                 </span>
-                <p className="mt-1.5 truncate text-xs text-[#9494A0]">{flag.userEmail || `User #${flag.userId}`}</p>
-                <div className="mt-2.5 flex gap-2">
-                  <button
-                    onClick={() => handleAction(flag, 'approve')}
-                    disabled={actingId === flag.id}
-                    className="flex flex-1 items-center justify-center gap-1 rounded-md border border-[#26262E] py-1.5 text-xs hover:border-[#2DD4BF]/50 hover:text-[#2DD4BF] disabled:opacity-50"
-                  >
-                    <Check size={12} /> Approve
-                  </button>
-                  <button
-                    onClick={() => handleAction(flag, 'reject')}
-                    disabled={actingId === flag.id}
-                    className="flex flex-1 items-center justify-center gap-1 rounded-md border border-[#26262E] py-1.5 text-xs hover:border-[#f08a96]/50 hover:text-[#f08a96] disabled:opacity-50"
-                  >
-                    <X size={12} /> Reject
-                  </button>
-                </div>
+                <p className="mt-1.5 text-sm text-[#E4E4E8]">{flag.flag_reason || 'No reason provided.'}</p>
+                <p className="mt-1 font-['JetBrains_Mono'] text-[11px] text-[#6B6B76]">
+                  Project: {flag.project_id} · {new Date(flag.created_at).toLocaleString()}
+                </p>
               </div>
+              <button
+                onClick={() => handleResolve(flag, 'approved')}
+                disabled={actingId === flag.id}
+                className="flex items-center gap-1 rounded-md border border-[#26262E] px-3 py-1.5 text-xs hover:border-[#2DD4BF]/50 hover:text-[#2DD4BF] disabled:opacity-50"
+              >
+                <Check size={12} /> Approve
+              </button>
+              <button
+                onClick={() => handleResolve(flag, 'rejected')}
+                disabled={actingId === flag.id}
+                className="flex items-center gap-1 rounded-md border border-[#26262E] px-3 py-1.5 text-xs hover:border-[#f08a96]/50 hover:text-[#f08a96] disabled:opacity-50"
+              >
+                <X size={12} /> Reject
+              </button>
             </div>
           ))}
         </div>

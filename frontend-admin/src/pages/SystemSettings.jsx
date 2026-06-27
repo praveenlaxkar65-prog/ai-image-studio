@@ -2,12 +2,7 @@ import React from 'react';
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 
-const DEFAULTS = {
-  platformName: 'ai-image-studio',
-  signupBonus: 10,
-  maintenanceMode: false,
-  supportEmail: '',
-};
+const DEFAULTS = { siteName: '', logoUrl: '', termsUrl: '', policyUrl: '' };
 
 export default function SystemSettings() {
   const [form, setForm] = useState(DEFAULTS);
@@ -18,28 +13,28 @@ export default function SystemSettings() {
   useEffect(() => {
     api
       .get('/settings')
-      .then((res) => setForm((p) => ({ ...p, ...(res.data?.settings ?? res.data) })))
+      .then((res) => {
+        const general = res.data?.settings?.general_site_settings;
+        if (general) setForm((p) => ({ ...p, ...general }));
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setForm((p) => ({ ...p, [name]: type === 'checkbox' ? checked : type === 'number' ? Number(value) : value }));
-  };
+  const handleChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
     try {
-      await api.put('/settings', form);
-    } catch {
-      // backend not wired yet
-    } finally {
-      setSaving(false);
+      await api.put('/settings/general', form);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Could not save.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -54,28 +49,21 @@ export default function SystemSettings() {
   return (
     <div className="mx-auto max-w-xl px-6 py-8">
       <h1 className="mb-1 font-['Space_Grotesk'] text-xl font-medium">System Settings</h1>
-      <p className="mb-6 text-sm text-[#9494A0]">Platform-wide settings that don't belong to a specific module.</p>
+      <p className="mb-6 text-sm text-[#9494A0]">General site settings shown to users.</p>
 
       <form onSubmit={handleSubmit} className="space-y-5 rounded-xl border border-[#26262E] bg-[#15151C] p-5">
-        <Field label="Platform name">
-          <Input name="platformName" value={form.platformName} onChange={handleChange} />
+        <Field label="Site name">
+          <Input name="siteName" value={form.siteName} onChange={handleChange} placeholder="ai-image-studio" />
         </Field>
-
-        <Field label="Signup bonus (credits)">
-          <Input type="number" min={0} name="signupBonus" value={form.signupBonus} onChange={handleChange} />
+        <Field label="Logo URL">
+          <Input name="logoUrl" value={form.logoUrl} onChange={handleChange} placeholder="https://…" />
         </Field>
-
-        <Field label="Support email">
-          <Input type="email" name="supportEmail" value={form.supportEmail} onChange={handleChange} placeholder="support@example.com" />
+        <Field label="Terms of service URL">
+          <Input name="termsUrl" value={form.termsUrl} onChange={handleChange} placeholder="https://…" />
         </Field>
-
-        <label className="flex items-center gap-2.5 text-sm">
-          <input
-            type="checkbox" name="maintenanceMode" checked={form.maintenanceMode} onChange={handleChange}
-            className="accent-[#7C5CFC]"
-          />
-          Maintenance mode (blocks user-facing access)
-        </label>
+        <Field label="Privacy policy URL">
+          <Input name="policyUrl" value={form.policyUrl} onChange={handleChange} placeholder="https://…" />
+        </Field>
 
         <div className="flex items-center gap-3">
           <button

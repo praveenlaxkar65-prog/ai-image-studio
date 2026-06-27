@@ -14,12 +14,16 @@ const {
 } = require('../users/walletController');
 const { getBalance, getTransactionHistory: getCreditHistory } = require('../credits/creditController');
 const { getNotifications, markAsRead } = require('../notifications/notificationController');
+const { uploadImage } = require('../users/uploadController');
 
 // Profile
 router.get('/profile', verifyToken, getProfile);
 router.put('/profile', verifyToken, updateProfile);
 router.put('/profile/password', verifyToken, changePassword);
 router.delete('/profile', verifyToken, deleteAccount);
+
+// Upload (used before calling any /api/tools/* endpoint)
+router.post('/upload', verifyToken, uploadImage);
 
 // Gallery
 router.get('/gallery', verifyToken, getGallery);
