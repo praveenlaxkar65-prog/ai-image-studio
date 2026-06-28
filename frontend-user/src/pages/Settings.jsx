@@ -52,12 +52,12 @@ function ProfileSection({ user, setUser }) {
     setSaving(true);
     setSaved(false);
     try {
-      const res = await api.patch('/user/profile', { name });
-      setUser((prev) => ({ ...prev, ...(res.data?.user ?? { name }) }));
+      const res = await api.put('/users/profile', { name });
+      const updated = res.data?.user;
+      setUser((prev) => ({ ...prev, ...updated, credits: updated?.credits_balance ?? prev.credits }));
       setSaved(true);
-    } catch {
-      setUser((prev) => ({ ...prev, name })); // optimistic, backend not wired yet
-      setSaved(true);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Could not save.');
     } finally {
       setSaving(false);
       setTimeout(() => setSaved(false), 2000);
@@ -86,7 +86,7 @@ function ProfileSection({ user, setUser }) {
 
 function PasswordSection() {
   const [form, setForm] = useState({ current: '', next: '', confirm: '' });
-  const [status, setStatus] = useState(null); // { type: 'error'|'success', message }
+  const [status, setStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const handleChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
@@ -99,14 +99,14 @@ function PasswordSection() {
       setStatus({ type: 'error', message: 'New passwords do not match.' });
       return;
     }
-    if (form.next.length < 8) {
-      setStatus({ type: 'error', message: 'New password must be at least 8 characters.' });
+    if (form.next.length < 6) {
+      setStatus({ type: 'error', message: 'New password must be at least 6 characters.' });
       return;
     }
 
     setSaving(true);
     try {
-      await api.post('/user/change-password', {
+      await api.put('/users/profile/password', {
         currentPassword: form.current,
         newPassword: form.next,
       });
@@ -123,31 +123,19 @@ function PasswordSection() {
   };
 
   return (
-    <SectionCard title="Password" description="Use at least 8 characters.">
+    <SectionCard title="Password" description="Use at least 6 characters.">
       <form onSubmit={handleSubmit} className="space-y-4">
         <Field
-          label="Current password"
-          type="password"
-          name="current"
-          value={form.current}
-          onChange={handleChange}
-          required
+          label="Current password" type="password" name="current"
+          value={form.current} onChange={handleChange} required
         />
         <Field
-          label="New password"
-          type="password"
-          name="next"
-          value={form.next}
-          onChange={handleChange}
-          required
+          label="New password" type="password" name="next"
+          value={form.next} onChange={handleChange} required
         />
         <Field
-          label="Confirm new password"
-          type="password"
-          name="confirm"
-          value={form.confirm}
-          onChange={handleChange}
-          required
+          label="Confirm new password" type="password" name="confirm"
+          value={form.confirm} onChange={handleChange} required
         />
 
         {status && (
@@ -157,8 +145,7 @@ function PasswordSection() {
         )}
 
         <button
-          type="submit"
-          disabled={saving}
+          type="submit" disabled={saving}
           className="rounded-lg border border-[#26262E] px-4 py-2 text-sm font-medium transition hover:border-[#7C5CFC]/50 disabled:opacity-60"
         >
           {saving ? 'Updating…' : 'Update password'}
@@ -170,13 +157,10 @@ function PasswordSection() {
 
 function PreferencesSection() {
   return (
-    <SectionCard
-      title="Storage"
-      description="Uploaded and generated files are temporary by default."
-    >
+    <SectionCard title="Storage" description="Uploaded and generated files are temporary by default.">
       <p className="text-sm text-[#9494A0]">
-        Files auto-delete <span className="text-[#F5F5F7]">12 hours</span> after creation unless
-        you save them to your Gallery. This window is set by the platform and may change.
+        Files auto-delete after a set period unless you save them to your Gallery. This window is
+        set by the platform and may change.
       </p>
     </SectionCard>
   );

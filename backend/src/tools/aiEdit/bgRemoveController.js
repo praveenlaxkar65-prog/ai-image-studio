@@ -1,10 +1,7 @@
-// backend/src/tools/aiEdit/bgRemoveController.js
-
+const fetch = global.fetch;
 const { randomUUID } = require('crypto');
 
 const { supabase } = require('../../db/dbConnect');
-const { routeToProvider } = require('../../providers/providerRouter');
-
 const {
   checkBalance,
   deductCredits
@@ -15,34 +12,16 @@ const {
   getStorageConfig
 } = require('../../storage/storageAdapterRegistry');
 
-const VALID_REPLACEMENTS = [
-  'transparent',
-  'color',
-  'blur'
-];
+const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8001';
+const PYTHON_SERVICE_TIMEOUT_MS = 60000;
 
 async function removeBackground(req, res) {
   try {
     const userId = req.user.id;
-
-    const {
-      imageUrl,
-      replacementType = 'transparent',
-      replacementColor
-    } = req.body;
+    const { imageUrl } = req.body;
 
     if (!imageUrl) {
-      return res.status(400).json({
-        success: false,
-        message: 'imageUrl is required.'
-      });
-    }
-
-    if (!VALID_REPLACEMENTS.includes(replacementType)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid replacementType.'
-      });
+      return res.status(400).json({ success: false, message: 'imageUrl is required.' });
     }
 
     const { data: tool, error: toolError } = await supabase
@@ -52,23 +31,18 @@ async function removeBackground(req, res) {
       .eq('is_active', true)
       .maybeSingle();
 
-    if (toolError) {
-      throw toolError;
-    }
+    if (toolError) throw toolError;
 
     if (!tool) {
       return res.status(404).json({
         success: false,
-        message: 'Background removal tool is not configured.'
+        message: 'Background-remove tool is not configured.'
       });
     }
 
     const creditCost = Number(tool.credit_cost || 0);
 
-    const balance = await checkBalance(
-      userId,
-      creditCost
-    );
+    const balance = await checkBalance(userId, creditCost);
 
     if (!balance.sufficient) {
       return res.status(402).json({
@@ -79,89 +53,69 @@ async function removeBackground(req, res) {
       });
     }
 
-    let providerResult;
-
+    let pythonResult;
     try {
-      providerResult = await routeToProvider(
-        'bg_remove',
-        {
-          imageUrl,
-          replacementType,
-          replacementColor
-        },
-        {}
-      );
-    } catch (providerError) {
-      console.error(
-        'Background removal provider failed:',
-        providerError
-      );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), PYTHON_SERVICE_TIMEOUT_MS);
 
-      return res.status(500).json({
+      const pythonResponse = await fetch(`${PYTHON_AI_SERVICE_URL}/process/bg-remove`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      pythonResult = await pythonResponse.json();
+    } catch (fetchErr) {
+      if (fetchErr.name === 'AbortError') {
+        return res.status(504).json({
+          success: false,
+          message: 'BG-remove service is taking too long. Please try again.'
+        });
+      }
+      return res.status(502).json({
         success: false,
-        message:
-          providerError.message ||
-          'Background removal failed.'
+        message: 'BG-remove service unavailable. Make sure the Python AI service is running on port 8001.'
       });
     }
 
-    let resultUrl = null;
-
-    if (providerResult?.resultUrl) {
-      resultUrl = providerResult.resultUrl;
-    } else if (providerResult?.resultBuffer) {
-      const adapter =
-        await getActiveStorageAdapter();
-
-      const storageConfig =
-        await getStorageConfig();
-
-      const fileName =
-        `bg_remove_${randomUUID()}.png`;
-
-      resultUrl =
-        await adapter.uploadFile(
-          providerResult.resultBuffer,
-          fileName,
-          storageConfig
-        );
-    } else {
+    if (!pythonResult || !pythonResult.success) {
       return res.status(500).json({
         success: false,
-        message:
-          'Provider returned no usable result.'
+        message: pythonResult?.message || 'Background removal failed.'
       });
     }
 
-    const idempotencyKey =
-      `${userId}_bg_remove_${Date.now()}`;
+    const outputBuffer = Buffer.from(pythonResult.imageBase64, 'base64');
+    const ext = (pythonResult.mimeType || 'image/png').split('/')[1] || 'png';
 
-    const deduction =
-      await deductCredits(
-        userId,
-        creditCost,
-        'bg_remove',
-        idempotencyKey
-      );
+    const adapter = await getActiveStorageAdapter();
+    const storageConfig = await getStorageConfig();
+    const fileName = `bg_remove_${randomUUID()}.${ext}`;
 
-    return res.json({
+    const uploadResult = await adapter.uploadFile(outputBuffer, fileName, storageConfig);
+    const resultUrl = uploadResult?.url || uploadResult?.publicUrl || uploadResult;
+
+    if (!resultUrl) {
+      throw new Error('Storage adapter did not return file URL.');
+    }
+
+    const idempotencyKey = req.headers['x-request-id'] || `${userId}_bg_remove_${randomUUID()}`;
+
+    const deduction = await deductCredits(userId, creditCost, 'bg_remove', idempotencyKey);
+
+    return res.status(200).json({
       success: true,
       resultUrl,
       creditsDeducted: creditCost,
       newBalance: deduction.newBalance
     });
-
   } catch (error) {
-    console.error(
-      'removeBackground:',
-      error
-    );
-
+    console.error('removeBackground:', error);
     return res.status(500).json({
       success: false,
-      message:
-        error.message ||
-        'Background removal failed.'
+      message: error.message || 'Background removal failed.'
     });
   }
 }

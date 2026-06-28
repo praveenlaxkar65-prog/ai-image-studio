@@ -4,12 +4,16 @@ import api from '../services/api';
 
 const AuthContext = createContext(null);
 
+function withCredits(user) {
+  if (!user) return null;
+  return { ...user, credits: user.credits_balance };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true); // true while we check existing session
+  const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
-  // On app load, if a token exists, try to restore the session
   useEffect(() => {
     const token = localStorage.getItem('ais_token');
     if (!token) {
@@ -17,13 +21,9 @@ export function AuthProvider({ children }) {
       return;
     }
 
-   api
-  .get('/auth/me')
-  .then((res) => {
-    const u = res.data?.user;
-    setUser(u ? { ...u, credits: u.credits_balance } : null);
-  })
-      
+    api
+      .get('/auth/me')
+      .then((res) => setUser(withCredits(res.data?.user)))
       .catch(() => {
         localStorage.removeItem('ais_token');
         setUser(null);
@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
       const res = await api.post('/auth/login', { email, password });
       const { token, user: userData } = res.data;
       localStorage.setItem('ais_token', token);
-      setUser({ ...userData, credits: userData.credits_balance });
+      setUser(withCredits(userData));
       return { success: true };
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed. Check your credentials.';
@@ -52,7 +52,7 @@ export function AuthProvider({ children }) {
       const res = await api.post('/auth/signup', { name, email, password });
       const { token, user: userData } = res.data;
       localStorage.setItem('ais_token', token);
-      setUser({ ...userData, credits: userData.credits_balance });
+      setUser(withCredits(userData));
       return { success: true };
     } catch (err) {
       const message = err.response?.data?.message || 'Could not create account.';

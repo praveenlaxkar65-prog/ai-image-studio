@@ -15,9 +15,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     api
-      .get('/user/gallery', { params: { limit: 6 } })
-      .then((res) => setProjects(res.data?.projects ?? res.data ?? []))
-      .catch(() => setProjects([])) // backend not wired yet, or genuinely empty
+      .get('/users/gallery', { params: { limit: 6 } })
+      .then((res) => setProjects(res.data?.projects ?? []))
+      .catch(() => setProjects([]))
       .finally(() => setProjectsLoading(false));
   }, []);
 
@@ -26,7 +26,6 @@ export default function Dashboard() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      {/* Credit balance + Prompt Studio CTA */}
       <div className="mb-8 grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-[#26262E] bg-[#15151C] p-5">
           <p className="font-['JetBrains_Mono'] text-xs uppercase tracking-[0.15em] text-[#6B6B76]">
@@ -58,7 +57,6 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {/* Quick tools */}
       <div className="mb-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-['Space_Grotesk'] text-sm font-medium text-[#9494A0]">
@@ -85,7 +83,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Recent projects */}
       <div>
         <h2 className="mb-3 font-['Space_Grotesk'] text-sm font-medium text-[#9494A0]">
           Recent projects
@@ -109,7 +106,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {projects.map((p) => (
               <div key={p.id} className="aspect-square overflow-hidden rounded-lg border border-[#26262E] bg-[#15151C]">
-                <img src={p.thumbnailUrl || p.url} alt={p.name || 'Project'} className="h-full w-full object-cover" />
+                <img src={p.file_url} alt="Project" className="h-full w-full object-cover" />
               </div>
             ))}
           </div>

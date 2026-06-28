@@ -2,7 +2,6 @@
 // npm install sharp node-fetch
 
 const sharp = require('sharp');
-const fetch = require('node-fetch');
 const { randomUUID } = require('crypto');
 
 const { supabase } = require('../../db/dbConnect');
