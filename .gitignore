@@ -6,3 +6,10 @@ build/
 *.log
 .DS_Store
 backend/.env
+
+# Python
+venv/
+.venv/
+ai-services/venv/
+__pycache__/
+*.py[cod]
