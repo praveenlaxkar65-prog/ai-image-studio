@@ -1,4 +1,12 @@
 const fetch = global.fetch;
+const nodeFetch = require('node-fetch');
+
+async function imageUrlToBase64(url) {
+  const res = await nodeFetch(url);
+  if (!res.ok) throw new Error('Failed to fetch image: ' + url);
+  const buf = await res.buffer();
+  return buf.toString('base64');
+}
 const { randomUUID } = require('crypto');
 
 const { supabase } = require('../../db/dbConnect');
@@ -61,7 +69,7 @@ async function removeBackground(req, res) {
       const pythonResponse = await fetch(`${PYTHON_AI_SERVICE_URL}/process/bg-remove`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl }),
+        body: JSON.stringify({ imageBase64: await imageUrlToBase64(imageUrl) }),
         signal: controller.signal
       });
 

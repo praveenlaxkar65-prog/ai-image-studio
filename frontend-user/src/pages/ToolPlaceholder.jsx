@@ -16,6 +16,9 @@ const WORKING_TOOLS = {
   sharpen:     { apiPath: 'sharpen',          fields: ['intensity'] },
   noise:       { apiPath: 'noise-reduction',  fields: [] },
   'file-format': { apiPath: 'convert', fields: ['quality'], formatSelect: true },
+  upscale: { apiPath: 'upscale', fields: [] },
+  'face-restore': { apiPath: 'face-restore', fields: [] },
+  'old-photo-repair': { apiPath: 'old-photo-repair', fields: [] },
 };
 
 export default function ToolPlaceholder() {

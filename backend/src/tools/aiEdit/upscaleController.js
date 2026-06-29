@@ -1,169 +1,65 @@
-// backend/src/tools/aiEdit/upscaleController.js
+const fetch = global.fetch;
+const nodeFetch = require('node-fetch');
 
+async function imageUrlToBase64(url) {
+  const res = await nodeFetch(url);
+  if (!res.ok) throw new Error('Failed to fetch image: ' + url);
+  const buf = await res.buffer();
+  return buf.toString('base64');
+}
 const { randomUUID } = require('crypto');
-
 const { supabase } = require('../../db/dbConnect');
-const { routeToProvider } = require('../../providers/providerRouter');
+const { checkBalance, deductCredits } = require('../../credits/creditService');
+const { getActiveStorageAdapter, getStorageConfig } = require('../../storage/storageAdapterRegistry');
 
-const {
-  checkBalance,
-  deductCredits
-} = require('../../credits/creditService');
-
-const {
-  getActiveStorageAdapter,
-  getStorageConfig
-} = require('../../storage/storageAdapterRegistry');
-
-const VALID_SCALE_FACTORS = [2, 4];
+const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8001';
 
 async function upscaleImage(req, res) {
   try {
     const userId = req.user.id;
+    const { imageUrl } = req.body;
+    if (!imageUrl) return res.status(400).json({ success: false, message: 'imageUrl is required.' });
 
-    let {
-      imageUrl,
-      scaleFactor = 2,
-      targetResolution
-    } = req.body;
-
-    if (!imageUrl) {
-      return res.status(400).json({
-        success: false,
-        message: 'imageUrl is required.'
-      });
-    }
-
-    scaleFactor = Number(scaleFactor);
-
-    if (!VALID_SCALE_FACTORS.includes(scaleFactor)) {
-      return res.status(400).json({
-        success: false,
-        message: 'scaleFactor must be 2 or 4.'
-      });
-    }
-
-    const { data: tool, error: toolError } = await supabase
-      .from('tools_config')
-      .select('credit_cost')
-      .eq('tool_key', 'upscale_image')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    if (toolError) {
-      throw toolError;
-    }
-
-    if (!tool) {
-      return res.status(404).json({
-        success: false,
-        message: 'Upscale tool is not configured.'
-      });
-    }
+    const { data: tool, error: toolError } = await supabase.from('tools_config').select('credit_cost').eq('tool_key', 'upscale_image').eq('is_active', true).maybeSingle();
+    if (toolError) throw toolError;
+    if (!tool) return res.status(404).json({ success: false, message: 'Upscale tool is not configured.' });
 
     const creditCost = Number(tool.credit_cost || 0);
+    const balance = await checkBalance(userId, creditCost);
+    if (!balance.sufficient) return res.status(402).json({ success: false, message: 'Insufficient credits.', available: balance.currentBalance, required: creditCost });
 
-    const balance = await checkBalance(
-      userId,
-      creditCost
-    );
-
-    if (!balance.sufficient) {
-      return res.status(402).json({
-        success: false,
-        message: 'Insufficient credits.',
-        available: balance.currentBalance,
-        required: creditCost
-      });
-    }
-
-    let providerResult;
-
+    let pythonResult;
     try {
-      providerResult = await routeToProvider(
-        'upscale_image',
-        {
-          imageUrl,
-          scaleFactor,
-          targetResolution
-        },
-        {}
-      );
-    } catch (providerError) {
-      console.error(
-        'Upscale provider failed:',
-        providerError
-      );
-
-      return res.status(500).json({
-        success: false,
-        message:
-          providerError.message ||
-          'Image upscaling failed.'
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+      const pythonResponse = await fetch(`${PYTHON_AI_SERVICE_URL}/process/upscale`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: await imageUrlToBase64(imageUrl) }), signal: controller.signal
       });
+      clearTimeout(timeoutId);
+      pythonResult = await pythonResponse.json();
+    } catch (fetchErr) {
+      if (fetchErr.name === 'AbortError') return res.status(504).json({ success: false, message: 'Upscale service timed out.' });
+      return res.status(502).json({ success: false, message: 'Upscale service unavailable.' });
     }
 
-    let resultUrl = null;
+    if (!pythonResult || !pythonResult.success) return res.status(500).json({ success: false, message: pythonResult?.message || 'Upscaling failed.' });
 
-    if (providerResult?.resultUrl) {
-      resultUrl = providerResult.resultUrl;
-    } else if (providerResult?.resultBuffer) {
-      const adapter =
-        await getActiveStorageAdapter();
+    const outputBuffer = Buffer.from(pythonResult.imageBase64, 'base64');
+    const adapter = await getActiveStorageAdapter();
+    const storageConfig = await getStorageConfig();
+    const fileName = `upscale_${randomUUID()}.png`;
+    const uploadResult = await adapter.uploadFile(outputBuffer, fileName, storageConfig);
+    const resultUrl = uploadResult?.url || uploadResult?.publicUrl || uploadResult;
+    if (!resultUrl) throw new Error('Storage adapter did not return file URL.');
 
-      const storageConfig =
-        await getStorageConfig();
-
-      const fileName =
-        `upscale_${randomUUID()}.png`;
-
-      resultUrl =
-        await adapter.uploadFile(
-          providerResult.resultBuffer,
-          fileName,
-          storageConfig
-        );
-    } else {
-      return res.status(500).json({
-        success: false,
-        message:
-          'Provider returned no usable result.'
-      });
-    }
-
-    const idempotencyKey =
-      `${userId}_upscale_image_${Date.now()}`;
-
-    const deduction =
-      await deductCredits(
-        userId,
-        creditCost,
-        'upscale_image',
-        idempotencyKey
-      );
-
-    return res.json({
-      success: true,
-      resultUrl,
-      creditsDeducted: creditCost,
-      newBalance: deduction.newBalance
-    });
-
+    const idempotencyKey = `${userId}_upscale_image_${randomUUID()}`;
+    const deduction = await deductCredits(userId, creditCost, 'upscale_image', idempotencyKey);
+    return res.json({ success: true, resultUrl, creditsDeducted: creditCost, newBalance: deduction.newBalance });
   } catch (error) {
-    console.error(
-      'upscaleImage:',
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        error.message ||
-        'Image upscaling failed.'
-    });
+    console.error('upscaleImage:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Upscaling failed.' });
   }
 }
 
-module.exports = {
-  upscaleImage
-};
+module.exports = { upscaleImage };
